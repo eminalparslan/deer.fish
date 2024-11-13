@@ -1,6 +1,11 @@
 # deer.fish - File navigator for fish shell
 # Port of https://github.com/vifon/deer for fish shell
 
+# TODO: search
+# TODO: filter
+# TODO: rifle
+# TODO: image preview
+
 # Set default values
 set -g DEER_HEIGHT 22
 set -g DEER_SHOW_HIDDEN false
@@ -93,7 +98,7 @@ function deer_get_preview
             head -n 10 $file
         else if file $file | string match -q "*image*"
             # TODO: get this working
-            viu -w 30 -x (math $DEER_CURRENT_WIDTH + $DEER_PARENT_WIDTH + 10) $file
+            #viu -w 30 -x (math $DEER_CURRENT_WIDTH + $DEER_PARENT_WIDTH + 10) $file
             echo ""
         else
             echo "Binary file"
@@ -144,10 +149,21 @@ function deer_refresh
         end
         set -l parent_file (string pad -w $DEER_PARENT_WIDTH -r -- "")
         if test $p -le (count $parent_files)
-            if test "$parent_files[$p]" = (basename $DEER_DIRNAME)
-                set parent_file (string pad -w $DEER_PARENT_WIDTH -r -- "-> $parent_files[$p]")
+            set -l prefix ""
+            set -l is_current "$parent_files[$p]" = (basename $DEER_DIRNAME)
+            set prefix (test $is_current; and echo "-> "; or echo "   ")
+
+            set -l orig_len (string length -- $parent_files[$p])
+            set trimmed_name (string sub -l (math $DEER_PARENT_WIDTH - 3) -- $parent_files[$p])
+            set -l trim_suffix ""
+            if test $orig_len -gt (math $DEER_PARENT_WIDTH - 3)
+                set trim_suffix "…"
+            end
+
+            if test -d (dirname $DEER_DIRNAME)"/$parent_files[$p]"
+                set parent_file (string pad -w $DEER_PARENT_WIDTH -r -- "$prefix"(set_color blue)"$trimmed_name$trim_suffix"(set_color normal))
             else
-                set parent_file (string pad -w $DEER_PARENT_WIDTH -r -- "   $parent_files[$p]")
+                set parent_file (string pad -w $DEER_PARENT_WIDTH -r -- "$prefix$trimmed_name$trim_suffix")
             end
         end
 
@@ -157,10 +173,20 @@ function deer_refresh
         end
         set -l current_file (string pad -w $DEER_CURRENT_WIDTH -r -- "")
         if test $f -le (count $current_files)
-            if test "$current_files[$f]" = "$DEER_BASENAME"
-                set current_file (string pad -w $DEER_CURRENT_WIDTH -r -- "-> $current_files[$f]")
+            set -l is_selected "$current_files[$f]" = "$DEER_BASENAME"
+            set -l prefix (test $is_selected; and echo "-> "; or echo "   ")
+
+            set -l orig_len (string length -- $current_files[$f])
+            set trimmed_name (string sub -l (math $DEER_CURRENT_WIDTH - 3) -- $current_files[$f])
+            set -l trim_suffix ""
+            if test $orig_len -gt (math $DEER_CURRENT_WIDTH - 3)
+                set trim_suffix "…"
+            end
+
+            if test -d "$DEER_DIRNAME/$current_files[$f]"
+                set current_file (string pad -w $DEER_CURRENT_WIDTH -r -- "$prefix"(set_color blue)"$trimmed_name$trim_suffix"(set_color normal))
             else
-                set current_file (string pad -w $DEER_CURRENT_WIDTH -r -- "   $current_files[$f]")
+                set current_file (string pad -w $DEER_CURRENT_WIDTH -r -- "$prefix$trimmed_name$trim_suffix")
             end
         else if test $f -eq 1 -a (count $current_files) -eq 0
             set current_file (string pad -w $DEER_CURRENT_WIDTH -r -- "<empty>")
@@ -170,9 +196,6 @@ function deer_refresh
         if test $i -le (count $preview_lines)
             set preview_line (string pad -w $DEER_PREVIEW_WIDTH -r -- $preview_lines[$i])
         end
-
-        set parent_file (string sub -l $DEER_PARENT_WIDTH -- $parent_file)
-        set current_file (string sub -l $DEER_CURRENT_WIDTH -- $current_file)
         set preview_line (string sub -l $DEER_PREVIEW_WIDTH -- $preview_line)
 
         set output_lines $output_lines "$parent_file   $current_file   $preview_line"
@@ -289,16 +312,16 @@ function deer_launch
             case $DEER_KEY_QUIT
                 break
             case $DEER_KEYS_APPEND_PATH
-                commandline -i -- (deer_relative_path)
+                commandline -i -- (string escape (deer_relative_path))
                 break
             case $DEER_KEYS_APPEND_ABS_PATH
-                commandline -t -- "$DEER_DIRNAME/$DEER_BASENAME"
+                commandline -t -- (string escape "$DEER_DIRNAME/$DEER_BASENAME")
                 break
             case $DEER_KEYS_INSERT_PATH
-                commandline -a -- (deer_relative_path)
+                commandline -a -- (string escape (deer_relative_path))
                 break
             case $DEER_KEYS_INSERT_ABS_PATH
-                commandline -t -- "$DEER_DIRNAME/$DEER_BASENAME"
+                commandline -t -- (string escape "$DEER_DIRNAME/$DEER_BASENAME")
                 set -l path_len (string length $DEER_DIRNAME/$DEER_BASENAME)
                 # Move cursor to the beginning of the token
                 #echo -en "\033["$path_len"D"
