@@ -3,7 +3,6 @@
 
 # TODO: search
 # TODO: filter
-# TODO: rifle
 # TODO: image preview
 
 # Set default values
@@ -56,6 +55,23 @@ function relpath -a source target -d "Print target path with relative to the sou
     string replace -r '/$' '' -- "$source/$target"
 end
 
+function set_current_row
+    set -l saved_tty (stty -g)
+    stty raw -echo
+
+    printf "\033[6n"
+    set -l response ""
+    while read -l -z -n 1 char
+        set response $response$char
+        test "$char" = "R"; and break
+    end
+
+    stty $saved_tty
+
+    set response (string sub -s 3 -e -1 $response)
+    set -g CURRENT_ROW (string split \; "$response")[1]
+end
+
 function deer_move -a movement
     # TODO: add optional flag to show hidden files
     set -l files (command ls -1 $DEER_DIRNAME)
@@ -97,8 +113,6 @@ function deer_get_preview
         if file $file | string match -q "*text*"
             head -n 10 $file
         else if file $file | string match -q "*image*"
-            # TODO: get this working
-            #viu -w 30 -x (math $DEER_CURRENT_WIDTH + $DEER_PARENT_WIDTH + 10) $file
             echo ""
         else
             echo "Binary file"
@@ -142,6 +156,8 @@ function deer_refresh
         set parent_index 1
     end
 
+    set -l trimmed_width (math $DEER_PARENT_WIDTH - 3)
+
     for i in (seq 1 $DEER_HEIGHT)
         set -l p $i
         if test $parent_index -gt 5
@@ -154,14 +170,18 @@ function deer_refresh
             set prefix (test $is_current; and echo "-> "; or echo "   ")
 
             set -l orig_len (string length -- $parent_files[$p])
-            set trimmed_name (string sub -l (math $DEER_PARENT_WIDTH - 3) -- $parent_files[$p])
             set -l trim_suffix ""
-            if test $orig_len -gt (math $DEER_PARENT_WIDTH - 3)
+            set -l trim 0
+            if test $orig_len -gt $trimmed_width
                 set trim_suffix "…"
+                set trim 1
             end
+            set -l trimmed_name (string sub -l (math $trimmed_width - $trim) -- $parent_files[$p])
 
             if test -d (dirname $DEER_DIRNAME)"/$parent_files[$p]"
                 set parent_file (string pad -w $DEER_PARENT_WIDTH -r -- "$prefix"(set_color blue)"$trimmed_name$trim_suffix"(set_color normal))
+            else if test -x (dirname $DEER_DIRNAME)"/$parent_files[$p]"
+                set parent_file (string pad -w $DEER_PARENT_WIDTH -r -- "$prefix"(set_color green)"$trimmed_name$trim_suffix"(set_color normal))
             else
                 set parent_file (string pad -w $DEER_PARENT_WIDTH -r -- "$prefix$trimmed_name$trim_suffix")
             end
@@ -177,14 +197,18 @@ function deer_refresh
             set -l prefix (test $is_selected; and echo "-> "; or echo "   ")
 
             set -l orig_len (string length -- $current_files[$f])
-            set trimmed_name (string sub -l (math $DEER_CURRENT_WIDTH - 3) -- $current_files[$f])
             set -l trim_suffix ""
-            if test $orig_len -gt (math $DEER_CURRENT_WIDTH - 3)
+            set -l trim 0
+            if test $orig_len -gt $trimmed_width
                 set trim_suffix "…"
+                set trim 1
             end
+            set -l trimmed_name (string sub -l (math $trimmed_width - $trim) -- $current_files[$f])
 
             if test -d "$DEER_DIRNAME/$current_files[$f]"
                 set current_file (string pad -w $DEER_CURRENT_WIDTH -r -- "$prefix"(set_color blue)"$trimmed_name$trim_suffix"(set_color normal))
+            else if test -x "$DEER_DIRNAME/$current_files[$f]"
+                set current_file (string pad -w $DEER_CURRENT_WIDTH -r -- "$prefix"(set_color green)"$trimmed_name$trim_suffix"(set_color normal))
             else
                 set current_file (string pad -w $DEER_CURRENT_WIDTH -r -- "$prefix$trimmed_name$trim_suffix")
             end
@@ -209,6 +233,12 @@ function deer_refresh
 
     # Print all lines at once
     printf "%s\n" $output_lines
+
+    # Display image preview
+    set -l file "$DEER_DIRNAME/$DEER_BASENAME"
+    if file $file | string match -q "*image*"
+        kitty +kitten icat --place $DEER_PREVIEW_WIDTH"x"$DEER_HEIGHT"@"(math $DEER_CURRENT_WIDTH + $DEER_PARENT_WIDTH + 8)"x"$CURRENT_ROW --clear --scale-up --transfer-mode=stream --stdin=no $file &
+    end
 
     # Restore cursor position
     tput rc
@@ -238,24 +268,9 @@ function deer_set_initial_directory
 end
 
 function ensure_space -a needed_space
-    set -l saved_tty (stty -g)
-    stty raw -echo
-
-    printf "\033[6n"
-    set -l response ""
-    while read -l -z -n 1 char
-        set response $response$char
-        test "$char" = "R"; and break
-    end
-
-    stty $saved_tty
-
-    set response (string sub -s 3 -e -1 $response)
-    set -l current_row (string split \; "$response")[1]
-
     set -l terminal_height (tput lines)
 
-    set -l lines_to_scroll (math "$current_row + $needed_space - $terminal_height")
+    set -l lines_to_scroll (math "$CURRENT_ROW + $needed_space - $terminal_height")
 
     if test $lines_to_scroll -gt 0
         tput sc
@@ -269,6 +284,8 @@ end
 
 function deer_launch
     set -g DEER_DIRNAME
+
+    set_current_row
 
     ensure_space $DEER_HEIGHT
 
@@ -337,6 +354,9 @@ function deer_launch
                 else
                     deer_refresh
                 end
+            case $DEER_KEYS_RIFLE
+                rifle $DEER_DIRNAME/$DEER_BASENAME
+                break
             case '*'
                 # Ignore other keys
         end
