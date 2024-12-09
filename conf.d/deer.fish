@@ -3,7 +3,6 @@
 
 # TODO: search
 # TODO: filter
-# TODO: image preview
 
 # Set default values
 set -g DEER_HEIGHT 22
@@ -146,15 +145,16 @@ function deer_refresh
     set -l preview (deer_get_preview)
     set -l preview_lines (string split \n -- $preview)
 
-    set -l file_index (contains -i -- $DEER_BASENAME $current_files)
-    if test -z "$file_index"
-        set file_index 1
+    function get_file_index -a basename files
+        set -l index (contains -i -- $basename $files)
+        if test -z "$index"
+            set index 1
+        end
+        echo $index
     end
 
-    set -l parent_index (contains -i -- (basename $DEER_DIRNAME) $parent_files)
-    if test -z "$parent_index"
-        set parent_index 1
-    end
+    set -l file_index (get_file_index $DEER_BASENAME $current_files)
+    set -l parent_index (get_file_index (basename $DEER_DIRNAME) $parent_files)
 
     set -l trimmed_width (math $DEER_PARENT_WIDTH - 3)
 
@@ -165,17 +165,12 @@ function deer_refresh
         end
         set -l parent_file (string pad -w $DEER_PARENT_WIDTH -r -- "")
         if test $p -le (count $parent_files)
-            set -l prefix ""
             set -l is_current "$parent_files[$p]" = (basename $DEER_DIRNAME)
-            set prefix (test $is_current; and echo "-> "; or echo "   ")
+            set -l prefix (test $is_current; and echo "-> "; or echo "   ")
 
             set -l orig_len (string length -- $parent_files[$p])
-            set -l trim_suffix ""
-            set -l trim 0
-            if test $orig_len -gt $trimmed_width
-                set trim_suffix "…"
-                set trim 1
-            end
+            set -l trim_suffix (test $orig_len -gt $trimmed_width; and echo "…"; or echo "")
+            set -l trim (string length -- $trim_suffix > /dev/null; and echo 1; or echo 0)
             set -l trimmed_name (string sub -l (math $trimmed_width - $trim) -- $parent_files[$p])
 
             if test -d (dirname $DEER_DIRNAME)"/$parent_files[$p]"
@@ -197,12 +192,8 @@ function deer_refresh
             set -l prefix (test $is_selected; and echo "-> "; or echo "   ")
 
             set -l orig_len (string length -- $current_files[$f])
-            set -l trim_suffix ""
-            set -l trim 0
-            if test $orig_len -gt $trimmed_width
-                set trim_suffix "…"
-                set trim 1
-            end
+            set -l trim_suffix (test $orig_len -gt $trimmed_width; and echo "…"; or echo "")
+            set -l trim (string length -- $trim_suffix > /dev/null; and echo 1; or echo 0)
             set -l trimmed_name (string sub -l (math $trimmed_width - $trim) -- $current_files[$f])
 
             if test -d "$DEER_DIRNAME/$current_files[$f]"
@@ -237,7 +228,8 @@ function deer_refresh
     # Display image preview
     set -l file "$DEER_DIRNAME/$DEER_BASENAME"
     if file $file | string match -q "*image*"
-        kitty +kitten icat --place $DEER_PREVIEW_WIDTH"x"$DEER_HEIGHT"@"(math $DEER_CURRENT_WIDTH + $DEER_PARENT_WIDTH + 8)"x"$CURRENT_ROW --clear --scale-up --transfer-mode=stream --stdin=no $file &
+        set -l place $DEER_PREVIEW_WIDTH"x"$DEER_HEIGHT"@"(math $DEER_CURRENT_WIDTH + $DEER_PARENT_WIDTH + 8)"x"$CURRENT_ROW
+        kitty +kitten icat --place $place --clear --scale-up --transfer-mode=stream --stdin=no $file &
     end
 
     # Restore cursor position
